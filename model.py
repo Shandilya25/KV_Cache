@@ -2,7 +2,9 @@ import torch
 import torch.nn as nn
 import math
 
-from transformers_from_scratch.model import MultiHeadAttention
+from config import get_configuration
+
+config=get_configuration()
 
 
 class InputEmbedding(nn.Module):
@@ -67,71 +69,65 @@ class ff_nn(nn.Module):
 class MultiheadAttention(nn.Module):
     
     def __init__(self,embedding_dim,n_heads,dropout):
+        super().__init__()
         self.embedding_dim=embedding_dim
-        self.nheads=n_heads
+        self.n_heads=n_heads
         self.dropout=nn.Dropout(dropout)
         assert self.embedding_dim%self.n_heads==0,"Cannot divide the vector into given number of heads"
-        self.embedding_div=self.embedding_dim/self.n_heads
+        self.embedding_div=self.embedding_dim//self.n_heads
         
         self.w_q=nn.Linear(self.embedding_dim,self.embedding_dim)
         self.w_k=nn.Linear(self.embedding_dim,self.embedding_dim)
         self.w_v=nn.Linear(self.embedding_dim,self.embedding_dim)    
         
         self.w_o=nn.Linear(self.embedding_dim,self.embedding_dim)
-        
-        self.key_cache=torch.zeros(config["batch_size"],self.n_heads,config["seq_len"],self.embedding_div)
-        self.value_cache=torch.zeros(config["batch_size"],self.n_heads,config["seq_len"],self.embedding_div)
+        self.register_buffer('key_cache',torch.zeros(config["batch_size"],self.n_heads,config["seq_len"],self.embedding_div),persistent=False)
+        self.register_buffer('value_cache',torch.zeros(config["batch_size"],self.n_heads,config["seq_len"],self.embedding_div),persistent=False)
         self.cache_len=0
-        
-        
-    @staticmethod
-    def find_attention(query,key,value,mask,dropout):
-        
-        d_k=query.shape[-1]
-        attention_scores=(query @ key.transpose(-2,-1))/math.sqrt(d_k)
-        
-        if mask:
-            attention_scores=attention_scores.masked_fill_(mask==0,-1e9)
-            
-        if dropout:
-            attention_scores=dropout(attention_scores)
-        return (attention_scores @ value),attention_scores
+
+    def reset_cache(self):
+        self.cache_len=0
 
 
-    def forward(self,q,k,v,mask,use_cache=False):
-        new_tokens=q.shape[1]
-        
-        assert self.cache_len+new_tokens<=config["seq_len"],"Cache length exceeded"
-        
-        query=self.w_k(q)
+    def forward(self,q,k,v,mask=None,use_cache=False):
+        batch,new_tokens,_=q.shape
+
+        query=self.w_q(q)
         key=self.w_k(k)
         value=self.w_v(v)
         
-        query=query.view(query.shape[0],query.shape[1],self.nheads,self.embedding_div).transpose(1,2)
-        key=key.view(key.shape[0],key.shape[1],self.nheads,self.embedding_div).transpose(1,2)
-        value=value.view(value.shape[0],value.shape[1],self.nheads,self.embedding_div).transpose(1,2)
+        query=query.view(query.shape[0],query.shape[1],self.n_heads,self.embedding_div).transpose(1,2)
+        key=key.view(key.shape[0],key.shape[1],self.n_heads,self.embedding_div).transpose(1,2)
+        value=value.view(value.shape[0],value.shape[1],self.n_heads,self.embedding_div).transpose(1,2)
         
 
         if use_cache:
-            self.key_cache[:,:,self.cache_len:self.cache_len+new_tokens,:]=key
-            self.value_cache[:,:,self.cache_len:self.cache_len+new_tokens,:]=value
-            self.cache_len+=new_tokens
+            start=self.cache_len
+            end=start+new_tokens
+            assert end<=config["seq_len"],"Cache length exceeded"
 
-            key=self.key_cache[:,:,:self.cache_len,:]
-            value=self.value_cache[:,:,:self.cache_len,:]
-            
+            # slice by the real batch size, not config["batch_size"], so a batch of 1 still fits
+            self.key_cache[:batch,:,start:end,:]=key
+            self.value_cache[:batch,:,start:end,:]=value
+            self.cache_len=end
+
+            key=self.key_cache[:batch,:,:end,:]
+            value=self.value_cache[:batch,:,:end,:]
+
+            if mask is not None:
+                # rows = the new queries, cols = every cached key so far
+                mask=mask[:,:,start:end,:end]
+
         d_k=query.shape[-1]
         attention_scores=(query @ key.transpose(-2,-1))/math.sqrt(d_k)
-        
-        if mask:
-            if use_cache:
-                attention_scores=attention_scores.masked_fill_(mask[:,:,self.cache_len,:self.cache_len+new_tokens]==0,-1e9)
-            else:
-                attention_scores=attention_scores.masked_fill_(mask==0,-1e9)        
-        if self.dropout:
-            attention_scores=self.dropout(attention_scores)
+
+        if mask is not None:
+            attention_scores=attention_scores.masked_fill(mask==0,-1e9)
+        attention_scores=attention_scores.softmax(dim=-1)
+        attention_scores=self.dropout(attention_scores)
+
         x=(attention_scores @ value)
-        x=x.transpose(1,2).contiguous().view(x.dim[0],-1,self.heads*self.embedding_div)
-        
-        return self.final_w(x)
+        x=x.transpose(1,2).contiguous().view(batch,new_tokens,self.embedding_dim)
+
+        return self.w_o(x)
         
