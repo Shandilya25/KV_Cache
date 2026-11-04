@@ -66,18 +66,23 @@ class ff_nn(nn.Module):
     
 class MultiheadAttention(nn.Module):
     
-    def __init__(self,embedding_dim,nheads,dropout):
+    def __init__(self,embedding_dim,n_heads,dropout):
         self.embedding_dim=embedding_dim
-        self.nheads=nheads
+        self.nheads=n_heads
         self.dropout=nn.Dropout(dropout)
-        assert self.embedding_dim%self.nheads==0,"Cannot divide the vector into given number of heads"
-        self.embedding_div=self.embedding_dim/self.nheads
+        assert self.embedding_dim%self.n_heads==0,"Cannot divide the vector into given number of heads"
+        self.embedding_div=self.embedding_dim/self.n_heads
         
         self.w_q=nn.Linear(self.embedding_dim,self.embedding_dim)
         self.w_k=nn.Linear(self.embedding_dim,self.embedding_dim)
         self.w_v=nn.Linear(self.embedding_dim,self.embedding_dim)    
         
         self.w_o=nn.Linear(self.embedding_dim,self.embedding_dim)
+        
+        self.key_cache=torch.zeros(config["batch_size"],self.n_heads,config["seq_len"],self.embedding_div)
+        self.value_cache=torch.zeros(config["batch_size"],self.n_heads,config["seq_len"],self.embedding_div)
+        self.cache_len=0
+        
         
     @staticmethod
     def find_attention(query,key,value,mask,dropout):
@@ -93,8 +98,12 @@ class MultiheadAttention(nn.Module):
         return (attention_scores @ value),attention_scores
 
 
-    def forward(self,q,k,v,mask):
-        query=self.w_q(q)
+    def forward(self,q,k,v,mask,use_cache=False):
+        new_tokens=q.shape[1]
+        
+        assert self.cache_len+new_tokens<=config["seq_len"],"Cache length exceeded"
+        
+        query=self.w_k(q)
         key=self.w_k(k)
         value=self.w_v(v)
         
@@ -102,8 +111,26 @@ class MultiheadAttention(nn.Module):
         key=key.view(key.shape[0],key.shape[1],self.nheads,self.embedding_div).transpose(1,2)
         value=value.view(value.shape[0],value.shape[1],self.nheads,self.embedding_div).transpose(1,2)
         
-        x,attn=MultiHeadAttention.find_attention(query,key,value,mask,self.dropout)
 
+        if use_cache:
+            self.key_cache[:,:,self.cache_len:self.cache_len+new_tokens,:]=key
+            self.value_cache[:,:,self.cache_len:self.cache_len+new_tokens,:]=value
+            self.cache_len+=new_tokens
+
+            key=self.key_cache[:,:,:self.cache_len,:]
+            value=self.value_cache[:,:,:self.cache_len,:]
+            
+        d_k=query.shape[-1]
+        attention_scores=(query @ key.transpose(-2,-1))/math.sqrt(d_k)
+        
+        if mask:
+            if use_cache:
+                attention_scores=attention_scores.masked_fill_(mask[:,:,self.cache_len,:self.cache_len+new_tokens]==0,-1e9)
+            else:
+                attention_scores=attention_scores.masked_fill_(mask==0,-1e9)        
+        if self.dropout:
+            attention_scores=self.dropout(attention_scores)
+        x=(attention_scores @ value)
         x=x.transpose(1,2).contiguous().view(x.dim[0],-1,self.heads*self.embedding_div)
         
         return self.final_w(x)
