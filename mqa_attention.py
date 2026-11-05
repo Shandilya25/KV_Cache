@@ -81,8 +81,44 @@ class MultiQueryAttention(nn.Module):
         self.register_buffer('value_cache',torch.zeros(config["batch_size"],1,config["seq_len"],self.embedding_div),persistent=False)
         self.cache_len=0
         
-    def forward(self,q,k,v,mask=None):
-        d_k=self.embedding_div
+    def forward(self,q,k,v,mask=None,use_cache=False):
+        batch,tokens,_=q.shape
+        
+        query=self.w_q(q)
+        key=self.w_k(k)
+        value=self.w_v(v)
+        
+        query=query.view(query.shape[0],query.shape[1],self.n_heads,self.embedding_div).transpose(1,2)
+        key=key.view(key.shape[0],key.shape[1],1,self.embedding_div).transpose(1,2)
+        value=value.view(value.shape[0],value.shape[1],1,self.embedding_div).transpose(1,2)
+        
+        if use_cache:
+            start=self.cache_len
+            end=start+tokens
+            assert end<config["seq_len"],"Cache length exceeded the maximum sequence length"
+            self.key_cache[:batch,:,start:end,:]=key
+            self.value_cache[:batch,:,start:end,:]=value
+            self.cache_len=end
+            key=self.key_cache[:batch,:,:self.cache_len,:]
+            value=self.value_cache[:batch,:,:self.cache_len,:]  
+            
+            if mask is not None:
+
+                mask=mask[:,:,start:end,:end]
+
+        d_k=query.shape[-1]
+        attention_scores=(query @ key.transpose(-2,-1))/math.sqrt(d_k)
+
+        if mask is not None:
+            attention_scores=attention_scores.masked_fill(mask==0,-1e9)
+        attention_scores=attention_scores.softmax(dim=-1)
+        attention_scores=self.dropout(attention_scores)
+
+        x=(attention_scores @ value)
+        x=x.transpose(1,2).contiguous().view(batch,new_tokens,self.embedding_dim)
+
+        return self.w_o(x)
+            
         
         
         
