@@ -2,6 +2,9 @@ import torch
 import torch.nn as nn
 import math
 
+from config import get_configuration
+
+config=get_configuration()
 class Embedding(nn.Module):
     def __init__(self,vocab_size,embedding_dim):
         super().__init__()
@@ -46,3 +49,43 @@ class LayerNormalization(nn.Module):
         std=x.std(dim=-1,keepdim=True)
         return self.gamma*(x-mean)/(std+self.eps) + self.beta
     
+class FeedForward(nn.Module):
+    def __init__(self,embedding_dim,hidden_dim,dropout):
+        super().__init__()
+        self.embedding_dim=embedding_dim
+        self.hidden_dim=hidden_dim
+        self.hidden_dim=hidden_dim
+        self.dropout=nn.Dropout(dropout)
+        self.linear1=nn.Linear(embedding_dim,hidden_dim)
+        self.linear2=nn.Linear(hidden_dim,embedding_dim)
+        
+    def forward(self,x):
+        return self.linear2(self.dropout(torch.relu(self.linear1(x))))
+    
+class MultiQueryAttention(nn.Module):
+    def __init__(self,embedding_dim,dropout,n_heads):
+        super().__init()
+        self.embedding_dim=embedding_dim
+        self.dropout=nn.Dropout(dropout)
+        self.n_heads=n_heads
+        
+        assert self.embedding_dim%self.n_heads==0,"Cannot divide the vector into given number of heads"
+        self.embedding_div=self.embedding_dim//self.n_heads
+        
+        self.w_q=nn.Linear(self.embedding_dim,self.embedding_dim)
+        self.w_k=nn.Linear(self.embedding_dim,self.embedding_div)
+        self.w_k=nn.Linear(self.embedding_dim,self.embedding_div)
+        
+        self.w_o=nn.Linear(self.embedding_dim,self.embedding_dim)
+        self.register_buffer('key_cache',torch.zeros(config["batch_size"],1,config["seq_len"],self.embedding_div),persistent=False)
+        self.register_buffer('value_cache',torch.zeros(config["batch_size"],1,config["seq_len"],self.embedding_div),persistent=False)
+        self.cache_len=0
+        
+    def forward(self,q,k,v,mask=None):
+        d_k=self.embedding_div
+        
+        
+        
+        
+        
+        
