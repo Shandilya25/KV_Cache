@@ -5,6 +5,7 @@ import math
 from config import get_configuration
 
 config=get_configuration()
+
 class Embedding(nn.Module):
     def __init__(self,vocab_size,embedding_dim):
         super().__init__()
@@ -36,6 +37,7 @@ class Positional_embedding(nn.Module):
     def forward(self,x):
         x=x+self.positional_encoding[:,:x.shape[1],:].requires_grad_(False)
         return self.dropout(x)
+
         
 class LayerNormalization(nn.Module):
     def __init__(self,eps,features):
@@ -48,7 +50,8 @@ class LayerNormalization(nn.Module):
         mean=x.mean(dim=-1,keepdim=True)
         std=x.std(dim=-1,keepdim=True)
         return self.gamma*(x-mean)/(std+self.eps) + self.beta
-    
+
+
 class FeedForward(nn.Module):
     def __init__(self,embedding_dim,hidden_dim,dropout):
         super().__init__()
@@ -61,7 +64,8 @@ class FeedForward(nn.Module):
         
     def forward(self,x):
         return self.linear2(self.dropout(torch.relu(self.linear1(x))))
-    
+
+        
 class MultiQueryAttention(nn.Module):
     def __init__(self,embedding_dim,dropout,n_heads):
         super().__init()
