@@ -2,6 +2,10 @@ import torch
 import torch.nn as nn
 import math
 
+from config import get_configuration
+config=get_configuration()
+
+
 class Embedding(nn.Module):
     def __init__(self,embedding_dim,vocab_size):
         super().__init__()
@@ -68,14 +72,21 @@ class GroupedQueryAttention(nn.Module):
         assert self.embedding_dim%self.num_heads==0,"Embedding dimension is not divisible by number of heads"
         assert self.embedding_dim%self.grouped_heads==0,"Embedding dimension is not divisible by number of grouped heads"
         
-        self.head_dim=self.embedding_dim/self.num_heads
-        self.group_dim=self.embedding_dim/self.grouped_heads
+        self.head_dim=self.embedding_dim//self.num_heads
+        self.group_dim=self.embedding_dim//self.grouped_heads
         
-        self.w_q=nn.Linear(self.embedding_dim,self.head_dim)
-        self.w_k=nn.Linear(self.embedding_dim,self.head_dim)
-        self.w_v=nn.Linear(self.embedding_dim,self.head_dim)
+        self.w_q=nn.Linear(self.embedding_dim,self.head_dim*self.num_heads)
+        self.w_k=nn.Linear(self.embedding_dim,self.head_dim*self.grouped_heads)
+        self.w_v=nn.Linear(self.embedding_dim,self.head_dim*self.grouped_heads)
         
+        self.w_o=nn.Linear(self.embedding_dim,self.embedding_dim)
         
+        self.register_buffer('Key_Cache',torch.zeros(config['batch_size'],grouped_heads,config['sequence_length'],self.embedding_dim),persistent=False)
+        self.register_buffer('Value_Cache',torch.zeros(config['batch_size'],grouped_heads,config['sequence_length'],self.embedding_dim),persistent=False)
+        self.cache_len=0
         
+    def forward(self,q,k,v,mask=None,use_cache=None):
+        
+                
         
         
