@@ -117,7 +117,7 @@ class GroupedQueryAttention(nn.Module):
         attention_scores=attention_scores.softmax(dim=-1)
 
         x=(attention_scores @ value)
-        x=x.transpose(1,2).contiguous().view(batch,tokens,self.embedding_dim)
+        x=x.transpose(1,2).contiguous().view(batch_size,tokens,self.embedding_dim)
 
         return self.w_o(x)    
                 
