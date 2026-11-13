@@ -86,7 +86,41 @@ class GroupedQueryAttention(nn.Module):
         self.cache_len=0
         
     def forward(self,q,k,v,mask=None,use_cache=None):
+        batch_size,tokens,d_k=q.shape
         
+        query=self.w_(q)
+        key=self.w_k(k)
+        value=self.w_v(v)
+        
+        query=query.view(query.shape[0],query.shape[1],self.num_heads,self.head_dim).transpose(1,2)
+        key=key.view(key.shape[0],key.shape[1],self.group_heads,self.head_dim).transpose(1,2)
+        value=value.view(value.shape[0],value.shape[1],self.group_heads,self.head_dim).transpose(1,2)
+        
+        if use_cache:
+            start=self.cache_len
+            end=start+tokens
+            assert end<config["seq_len"],"Cache length exceeded maximum sequence length"
+            self.key_cache[:batch_size,:,start:end,:]=key
+            self.value_cache[:batch_size,:,start:end,:]=value    
+            self.cache_len=end    
+            
+            key=self.key_cache[:batch_size,:,:self.cache_len,:]
+            value=self.value_cache[:batch_size,:,:self.cache_len,:]
+            
+            if mask:
+                mask=mask[:,:,start:end,:end]
+                
+        attention_scores=(query@key.transpoze(-2,-1))/math.sqrt(d_k)
+        
+        if mask:
+            attention_scores=attention_scores.masked_fill(mask==0,1e-9)
+        attention_scores=attention_scores.softmax(dim=-1)
+
+        x=(attention_scores @ value)
+        x=x.transpose(1,2).contiguous().view(batch,tokens,self.embedding_dim)
+
+        return self.w_o(x)    
+                
                 
         
         

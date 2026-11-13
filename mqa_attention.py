@@ -119,7 +119,7 @@ class MultiQueryAttention(nn.Module):
         attention_scores=self.dropout(attention_scores)
 
         x=(attention_scores @ value)
-        x=x.transpose(1,2).contiguous().view(batch,new_tokens,self.embedding_dim)
+        x=x.transpose(1,2).contiguous().view(batch,tokens,self.embedding_dim)
 
         return self.w_o(x)
             
