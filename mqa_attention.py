@@ -34,7 +34,7 @@ class Positional_embedding(nn.Module):
         self.register_buffer('positional_encoding', matrix)
         
     def forward(self,x):
-        x=x+self.positional_encoding[:,x.shape[1],:].requires_grad_(False)
+        x=x+self.positional_encoding[:,:x.shape[1],:].requires_grad_(False)
         return self.dropout(x)
         
 class LayerNormalization(nn.Module):
