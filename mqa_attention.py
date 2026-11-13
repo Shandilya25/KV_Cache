@@ -43,9 +43,9 @@ class LayerNormalization(nn.Module):
     def __init__(self,eps,features):
         super().__init__()
         self.eps=eps
-        self.gamma=torch.zeros(features)
-        self.beta=torch.ones(features)
-        
+        self.gamma=nn.Parameter(torch.ones(features))
+        self.beta=nn.Parameter(torch.zeros(features))
+
     def forward(self,x):
         mean=x.mean(dim=-1,keepdim=True)
         std=x.std(dim=-1,keepdim=True)
