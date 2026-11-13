@@ -14,7 +14,7 @@ class Embedding(nn.Module):
         self.vocab_size=vocab_size
         
     def forward(self,x):
-        return self.embedding(x)*math.sqrt(self.embedding_dim)
+        return self.embedding_layer(x)*math.sqrt(self.embedding_dim)
     
 class Positional_embedding(nn.Module):
     def __init__(self,embedding_dim,vocab_size,max_sequence_length,dropout):
